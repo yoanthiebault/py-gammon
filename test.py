@@ -5,7 +5,7 @@ the nosetests utility.
 
 import json
 from .util import tmp_path
-from .model import Board, Roll, Turn, WHITE, BLACK
+from .model import Board, Roll, Turn, SOUTH, NORTH
 from .game import Game
 from . import strategy
 
@@ -97,7 +97,7 @@ def test_new_board_possible_moves_after_first_die():
                     first_move = point
                 else:
                     # Use the first die, moving the the first possible move.
-                    if piece.color == WHITE:
+                    if piece.color == SOUTH:
                         first_move = moves[0] # White moves up.
                     else:
                         first_move = moves[-1] # Black moves down.
@@ -129,11 +129,11 @@ def test_jail1():
     'Moving a piece to a point with only one opposite piece sends him to jail.'
     brd = Board()
     brd = brd.move(1, 3)
-    assert not brd.jail(WHITE).pieces, 'jail should be empty'
+    assert not brd.jail(SOUTH).pieces, 'jail should be empty'
     brd = brd.move(6, 3)
-    equals('(W:1,)', str(brd.jail(WHITE).pieces))
+    equals('(W:1,)', str(brd.jail(SOUTH).pieces))
     brd = brd.move(3, 1)
-    equals('(W:1, W:0)', str(brd.jail(WHITE).pieces))
+    equals('(W:1, W:0)', str(brd.jail(SOUTH).pieces))
     equals([3], brd.possible_moves(Roll(6, 3), 0))
 
 def test_jail2():
@@ -141,7 +141,7 @@ def test_jail2():
     brd = Board()
     for i in range(2):
         brd = brd.move(1, 0)
-    equals(2, len(brd.jail(WHITE).pieces))
+    equals(2, len(brd.jail(SOUTH).pieces))
     # Should only be allowed to move to position 5, not 11 (5+6)
     equals([5], brd.possible_moves(Roll(6, 5), 0))
 
@@ -153,7 +153,7 @@ def test_jail3():
     brd = brd.move(6, 0)
     equals(None, brd.points[0].color) # Still no color since nothing jailed yet.
     brd = brd.move(1, 0)
-    equals(WHITE, brd.points[0].color)
+    equals(SOUTH, brd.points[0].color)
 
 
 def _use(roll, move, expected):
@@ -282,63 +282,63 @@ def test_safe1():
     # Nothing is safe for initial board.
     brd = Board()
     print(brd)
-    equals([], brd.safe(WHITE))
-    equals([], brd.safe(BLACK))
+    equals([], brd.safe(SOUTH))
+    equals([], brd.safe(NORTH))
     # Black past white.
     brd = brd.move(1, 3)
     brd = brd.move(1, 3)
     brd = brd.move(6, 2)
     print(brd)
-    equals([], brd.safe(WHITE))
-    equals([brd.points[i] for i in [2]], brd.safe(BLACK))
+    equals([], brd.safe(SOUTH))
+    equals([brd.points[i] for i in [2]], brd.safe(NORTH))
     # White past black.
     brd = brd.move(24, 22)
     brd = brd.move(19, 23)
     brd = brd.move(24, 22)
     print(brd)
-    equals([brd.points[i] for i in [23]], brd.safe(WHITE))
+    equals([brd.points[i] for i in [23]], brd.safe(SOUTH))
 
 def test_exposed1():
     'Can get list of exposed points.'
     # Nothing is exposed for initial board.
     brd = Board()
     print(brd)
-    equals([], brd.exposed(WHITE))
-    equals([], brd.exposed(BLACK))
+    equals([], brd.exposed(SOUTH))
+    equals([], brd.exposed(NORTH))
     # Common cases.
     brd = brd.move(1, 7)
     print(brd)
-    equals([brd.points[i] for i in [1, 7]], brd.exposed(WHITE))
+    equals([brd.points[i] for i in [1, 7]], brd.exposed(SOUTH))
     brd = brd.move(6, 2)
     print(brd)
-    equals([brd.points[i] for i in [2]], brd.exposed(BLACK))
+    equals([brd.points[i] for i in [2]], brd.exposed(NORTH))
     # Not considered exposed if behind enemy lines.
     brd = brd.move(1, 3)
     print(brd)
-    equals([], brd.exposed(BLACK))
+    equals([], brd.exposed(NORTH))
     # Jailed pieces not considered exposed, but...
     brd = brd.move(3, 0)
     print(brd)
-    equals([brd.points[i] for i in [7]], brd.exposed(WHITE))
+    equals([brd.points[i] for i in [7]], brd.exposed(SOUTH))
     # ...opposing pieces should still be considered exposed. 
-    equals([brd.points[i] for i in [2]], brd.exposed(BLACK))
+    equals([brd.points[i] for i in [2]], brd.exposed(NORTH))
 
 def test_jailed1():
     'Can get list of pieces in jail.'
     # Nothing is jailed for initial board.
     brd = Board()
     print(brd)
-    equals((), brd.jailed(WHITE))
-    equals((), brd.jailed(BLACK))
+    equals((), brd.jailed(SOUTH))
+    equals((), brd.jailed(NORTH))
     # Common case.
     brd = brd.move(1, 0)
     print(brd)
-    equals('(W:1,)', str(brd.jailed(WHITE)))
+    equals('(W:1,)', str(brd.jailed(SOUTH)))
     # Multiple pieces in jail.
     brd = brd.move(24, 25)
     brd = brd.move(13, 25)
     print(brd)
-    equals('(B:1, B:6)', str(brd.jailed(BLACK)))
+    equals('(B:1, B:6)', str(brd.jailed(NORTH)))
 
 def test_finished1():
     'A board is finished once all pieces are home for a color.'
@@ -384,16 +384,16 @@ def test_weighted_strategy1():
                            [ 13:B1 | 14    | 15    | 16    | 17:W3 | 18:B2 ] [ 19:W2 | 20:W1 | 21:W3 | 22    | 23:W2 | 24    ] [ 25:B0:W0 ]''')
     b2 = Board.from_str('''[ 12:W2 | 11    | 10    |  9    |  8:B2 |  7:B4 ] [  6:B4 |  5    |  4:B2 |  3    |  2    |  1:W2 ] [  0:W0:B0 ]
                            [ 13    | 14    | 15    | 16    | 17:W3 | 18:B2 ] [ 19:W2 | 20:W1 | 21:W3 | 22    | 23:W2 | 24    ] [ 25:B1:W0 ]''')
-    gt(strategy.safe(WHITE, b1), strategy.safe(WHITE, b2))
+    gt(strategy.safe(SOUTH, b1), strategy.safe(SOUTH, b2))
 
 
 def test_blocked1():
     'Home should never be considered blocked.'
     brd = Board.from_str('''[ 12:W3 | 11    | 10    |  9    |  8    |  7    ] [  6:B6 |  5:B3 |  4:B2 |  3:B4 |  2    |  1:W1 ] [  0:W1:B0 ]
                             [ 13    | 14    | 15    | 16    | 17:W3 | 18    ] [ 19:W2 | 20:W1 | 21:W3 | 22    | 23:W2 | 24    ] [ 25:B0:W0 ]''')
-    assert not brd.points[0].blocked(BLACK)
+    assert not brd.points[0].blocked(NORTH)
     brd = brd.move(12, 0)
-    assert not brd.points[0].blocked(BLACK)
+    assert not brd.points[0].blocked(NORTH)
 
 
 def test_can_home_when_enemy_jailed1():

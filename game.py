@@ -1,16 +1,18 @@
 """
 A way to "play" a game of backgammon.  Not much fun right now but it's a start.
 """
+import itertools
+
 __all__ = ['Game']
 
 import sys, json
 from functools import partial, reduce
 
 # I'm an idiot and I can't figure out how to do relative imports.
-# from .model import Board, Roll, WHITE, BLACK
-from model import Board, Point, Roll, Turn, WHITE, BLACK
+# from .model import Board, Roll, SOUTH, NORTH
+from model import Board, Point, Roll, Turn, SOUTH, NORTH
 from util import freshmaker
-import strategy
+from strategy import safe
 
 if sys.version_info[0] == 2:
     input = raw_input
@@ -20,18 +22,21 @@ class Player(object):
     """
     Interact with a board given a color & strategy.
     """
-    def interact(I, board, roll):
+    def interact(I, game):
         raise ValueError("need to implement interact(): {}".format(I))
+
+    def end_of_game(self, winner):
+        raise ValueError("need to implement end_of_game(): {}".format(I))
 
 
 class ComputerPlayer(Player):
     """
     An artificial player using given strategy to make moves.
+    A strategy is a function accepting a color and a board and returning a score.
     """
 
-    def __init__(I, color, strategy):
-        I.color = color
-        I.score = partial(strategy, color)
+    def __init__(I, strategy):
+        I.score = strategy
 
     def interact(I, game):
         """
@@ -40,7 +45,7 @@ class ComputerPlayer(Player):
         high_score = -9999
         best_moves = []
         for moves in game.all_choices():
-            score = I.score(reduce(lambda brd,move: brd.move(*move), moves, game.board))
+            score = I.score(game.color, reduce(lambda brd,move: brd.move(*move), moves, game.board))
             # print("SCORE: {:5}     PATH: {}".format(score, moves))
             if score > high_score:
                 high_score = score
@@ -94,17 +99,20 @@ class ConsolePlayer(Player):
     def stop(I):
         sys.exit('Good-bye')
 
+    def end_of_game(self, winner):
+        print(winner+" wins the game !")
+
 
 class Game(object):
     """
     A game is a Board and a history of Turns.
     """
 
-    def __init__(I, white=None, black=None):
+    def __init__(I, south=None, north=None):
         I.board = Board()
         I.history = []
-        I.black = black or ConsolePlayer()
-        I.white = white or ComputerPlayer(WHITE, strategy.safe)
+        I.south = south or ConsolePlayer()
+        I.north = north or ComputerPlayer(safe)
 
     def __str__(I):
         return '\n'.join(str(i) for i in I.history)
@@ -124,7 +132,7 @@ class Game(object):
         """
         The current color.  White always starts.
         """
-        return BLACK if len(I.history) % 2 == 0 else WHITE
+        return NORTH if len(I.history) % 2 == 0 else SOUTH
 
     @property
     def moves(I):
@@ -137,10 +145,14 @@ class Game(object):
         """
         The main game loop.
         """
-        while True:
+        while not I.board.finished():
             I.roll_dice()
-            player = I.white if I.color == WHITE else I.black
+            player = I.south if I.color == SOUTH else I.north
             player.interact(I)
+        winner = NORTH if 15 == len(I.board.homed(NORTH)) else SOUTH
+        print(winner + " wins !")
+        I.south.end_of_game(winner)
+        I.north.end_of_game(winner)
 
     def roll_dice(I, roll=None):
         """
@@ -159,6 +171,10 @@ class Game(object):
         if isinstance(dst, Point):
             dst = dst.num
         dies = abs(dst - src)
+        if dst < 0:
+            dst = 0
+        elif dst > 25:
+            dst = 25
         new = I.board.move(src, dst)
         I.roll.use(dies)
         I.moves.append((src, dst))
@@ -213,32 +229,49 @@ class Game(object):
 
     @staticmethod
     def _all_choices(brd, roll, color, path):
-        direction = 1 if color == WHITE else -1
+        direction = 1 if color == SOUTH else -1
         min_point = 1
         max_point = 24
-        if brd.jailed(color):
+        last_checkers_position = brd.last_checkers_position(color)
+        biggest_distance_to_home = last_checkers_position if color == NORTH else (25-last_checkers_position)
+        if biggest_distance_to_home == 25:
             points = [brd.jail(color)]
         else:
-            points = filter(lambda pt: pt.color == color and pt.pieces, brd.points)
-            if brd.can_go_home(color):
-                if color == BLACK:
+            points = filter(lambda pt: pt.color == color, brd.points)
+            if biggest_distance_to_home <= 6:
+                if color == NORTH:
                     min_point -= 1
                 else:
                     max_point += 1
         for src in [pt.num for pt in points]:
-            moves = []
-            for hop in sorted(set(roll.dies)):
-                dst = src + (direction * hop)
-                if dst >= min_point and dst <= max_point and not brd.points[dst].blocked(color):
-                    moves.append(dst)
+            moves = set()
+            for die in sorted(set(roll.dies)):
+                dst = src + (direction * die)
+                if min_point <= dst <= max_point and not brd.points[dst].blocked(color):
+                    moves.add((dst,die))
+            if not moves and roll.dies and \
+                            biggest_distance_to_home <= 6 and \
+                            max(roll.dies) > biggest_distance_to_home and \
+                            src == last_checkers_position:
+                moves.add((src + (direction * max(roll.dies)), max(roll.dies)))
+
             if not moves:
                 yield path
-            for dst in moves:
+            for dst, die in moves:
                 used_roll = roll.copy()
-                used_roll.use(abs(dst - src))
+                used_roll.use(die)
                 # print("SRC: {:<10} DST: {:<10} DIES: {:<10} PATH: {}".format(src, dst, used_roll.dies, path))
-                for i in Game._all_choices(brd.move(src, dst), used_roll, color, path + ((src,dst),)):
-                    yield i
+                try:
+                    next_board = brd.move(src, dst)
+                except AssertionError as e:
+                    print(src,dst)
+                    print(brd.__str__())
+                    raise e
+                if next_board.finished():
+                    yield path + ((src,dst),)
+                else:
+                    for i in Game._all_choices(next_board, used_roll, color, path + ((src,dst),)):
+                        yield i
 
     def all_choices(I):
         """
@@ -249,8 +282,11 @@ class Game(object):
         for path in Game._all_choices(I.board, I.roll, I.color, ()):
             if len(path) > min_moves:
                 min_moves = len(path)
+            if any(p in paths for p in itertools.permutations(path, min_moves)):
+                continue
             paths.add(path)
-        return sorted(i for i in paths if len(i) >= min_moves)
+        return filter(lambda p : len(p) == min_moves, paths)
+
 
 
 if __name__ == '__main__':
